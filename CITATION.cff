@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+type: software
+authors:
+  - family-names: "Kurt"
+    given-names: "Orhan Nedim"
+title: "tcga-gdc-downloader"
+abstract: "A command-line and graphical tool to download TCGA RNA-seq gene expression 
+  count data from the NCI GDC portal, assemble a gene x sample count matrix, and 
+  annotate samples with GDC clinical data and PanCanAtlas CDR survival and subtype 
+  annotations."
+version: "2.1.1"
+date-released: "2026-02-28"
+doi: "10.5281/zenodo.18819588"
+url: "https://github.com/onedimkurt/tcga-gdc-downloader"
+repository-code: "https://github.com/onedimkurt/tcga-gdc-downloader"
+license: MIT
+keywords:
+  - TCGA
+  - GDC
+  - RNA-seq
+  - bioinformatics
+  - genomics
+  - cancer
+  - gene expression
+  - pan-cancer
+references:
+  - type: article
+    authors:
+      - family-names: "Liu"
+        given-names: "Jianfang"
+    title: "An Integrated TCGA Pan-Cancer Clinical Data Resource to Drive High-Quality Survival Outcome Analytics"
+    journal: "Cell"
+    volume: 173
+    issue: 2
+    pages: "400-416.e11"
+    year: 2018
+    doi: "10.1016/j.cell.2018.02.052"
