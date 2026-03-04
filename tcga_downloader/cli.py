@@ -127,63 +127,68 @@ def run_cli(args: argparse.Namespace):
         print("\n  ℹ️  Dry run complete. No files downloaded.")
         return
 
-    # ── Step 4: Download ──────────────────────────────────────────────────────
+    # ── Step 4: Download (batched to avoid GDC server truncation) ────────────
+    from tcga_downloader.constants import GDC_DOWNLOAD_BATCH_SIZE
+    import tarfile
     counts_dir = output_dir / "raw_counts"
     if not cp.is_done("downloaded"):
         counts_dir.mkdir(exist_ok=True)
-        zip_path   = output_dir / "gdc_download.zip"
-        file_ids   = [f["file_id"] for f in hits]
-        print(f"\n  📦  Downloading {len(file_ids)} files...")
-        client.stream_download(file_ids, str(zip_path))
-        print("  📂  Extracting archive...")
-        # GDC returns ZIP for multi-file downloads but occasionally tar.gz
-        # Detect actual format by reading magic bytes — never assume extension
-        with open(zip_path, "rb") as fh:
-            magic = fh.read(4)
+        file_ids  = [f["file_id"] for f in hits]
+        n_batches = (len(file_ids) + GDC_DOWNLOAD_BATCH_SIZE - 1) // GDC_DOWNLOAD_BATCH_SIZE
+        print(f"\n  📦  Downloading {len(file_ids)} files"
+              f" in {n_batches} batch{'es' if n_batches > 1 else ''}...")
 
-        try:
-            if magic[:2] == b'\x1f\x8b':
-                # gzip / tar.gz
-                import tarfile
-                archive_path = zip_path.with_suffix(".tar.gz")
-                zip_path.rename(archive_path)
-                with tarfile.open(archive_path, "r:gz") as t:
-                    t.extractall(counts_dir)
-                archive_path.unlink(missing_ok=True)
-            elif magic[:4] == b'PK\x03\x04':
-                # standard ZIP
-                with zipfile.ZipFile(zip_path, "r") as z:
-                    z.extractall(counts_dir)
-                zip_path.unlink(missing_ok=True)
+        for batch_num, batch_start in enumerate(
+                range(0, len(file_ids), GDC_DOWNLOAD_BATCH_SIZE), start=1):
+            batch_ids  = file_ids[batch_start:batch_start + GDC_DOWNLOAD_BATCH_SIZE]
+            batch_path = output_dir / f"gdc_batch_{batch_num:03d}.zip"
+
+            # Download batch if not already on disk
+            if not batch_path.exists():
+                print(f"  ⬇️   Batch {batch_num}/{n_batches} ({len(batch_ids)} files)...")
+                client.stream_download(batch_ids, str(batch_path))
             else:
-                file_size = zip_path.stat().st_size
+                print(f"  ✅  Batch {batch_num}/{n_batches}: already downloaded.")
+
+            # Extract batch
+            print(f"  📂  Extracting batch {batch_num}/{n_batches}...")
+            with open(batch_path, "rb") as fh:
+                magic = fh.read(4)
+
+            try:
+                if magic[:2] == b'\x1f\x8b':
+                    archive_path = batch_path.with_suffix(".tar.gz")
+                    batch_path.rename(archive_path)
+                    with tarfile.open(archive_path, "r:gz") as t:
+                        t.extractall(counts_dir)
+                    archive_path.unlink(missing_ok=True)
+                elif magic[:4] == b'PK\x03\x04':
+                    with zipfile.ZipFile(batch_path, "r") as z:
+                        z.extractall(counts_dir)
+                    batch_path.unlink(missing_ok=True)
+                else:
+                    file_size = batch_path.stat().st_size
+                    raise GDCError(
+                        f"Batch {batch_num} is not a ZIP or tar.gz "
+                        f"(size: {file_size/1024:.1f} KB, magic: {magic.hex()}).",
+                        fix="Re-run the same command to retry.",
+                        step="extraction",
+                    )
+            except (EOFError, tarfile.ReadError, zipfile.BadZipFile) as e:
+                for p in [batch_path, batch_path.with_suffix(".tar.gz")]:
+                    if p.exists():
+                        p.unlink()
                 raise GDCError(
-                    f"Downloaded file is not a ZIP or tar.gz "
-                    f"(size: {file_size/1024:.1f} KB, magic: {magic.hex()}).",
+                    f"Batch {batch_num}/{n_batches} archive is corrupted or incomplete: {e}",
                     fix=(
-                        "The GDC may have returned an error page instead of data.\n"
-                        "Delete the partial file and retry:\n"
-                        f"    rm {zip_path}\n"
-                        "    tcga-download --project TCGA-CHOL --output ~/TCGA_test\n"
-                        "(Completed steps are checkpointed and will not re-run.)"
+                        "The download was likely interrupted by the GDC server.\n"
+                        "The partial file has been deleted. Re-run the same command\n"
+                        "and the download will resume from the failed batch.\n"
+                        "(All other completed steps are checkpointed.)"
                     ),
                     step="extraction",
                 )
-        except (EOFError, tarfile.ReadError, zipfile.BadZipFile) as e:
-            # Archive is truncated — download was incomplete
-            for p in [zip_path, zip_path.with_suffix(".tar.gz")]:
-                if p.exists():
-                    p.unlink()
-            raise GDCError(
-                f"Downloaded archive is corrupted or incomplete: {e}",
-                fix=(
-                    "The download was likely interrupted by the GDC server.\n"
-                    "The partial file has been deleted. Re-run the same command\n"
-                    "and the download will restart automatically.\n"
-                    "(All other completed steps are checkpointed and will not re-run.)"
-                ),
-                step="extraction",
-            )
+
         cp.save("downloaded", {"counts_dir": str(counts_dir)})
     else:
         print("  ✅  Download: already done.")

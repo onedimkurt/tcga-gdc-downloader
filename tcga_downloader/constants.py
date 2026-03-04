@@ -167,6 +167,10 @@ MAX_RETRIES           = 3
 RETRY_WAIT_SECONDS    = 10
 CHUNK_SIZE_BYTES      = 1024 * 1024
 
+# GDC bulk download truncates archives above ~100 MB.
+# Batching at 50 files keeps each request well under this limit.
+GDC_DOWNLOAD_BATCH_SIZE = 50
+
 # ── Checkpoint ────────────────────────────────────────────────────────────────
 CHECKPOINT_FILE = "pipeline_checkpoint.json"
 

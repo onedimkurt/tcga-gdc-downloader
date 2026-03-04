@@ -378,9 +378,8 @@ class GDCClient:
                         fix="Check your internet connection and try again.",
                         step="download",
                     )
-        finally:
-            if hasattr(pbar, "close"):
-                pbar.close()
+        if hasattr(pbar, "close"):
+            pbar.close()
 
         return written
 
