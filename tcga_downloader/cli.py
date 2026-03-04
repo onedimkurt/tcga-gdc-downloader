@@ -141,30 +141,46 @@ def run_cli(args: argparse.Namespace):
         with open(zip_path, "rb") as fh:
             magic = fh.read(4)
 
-        if magic[:2] == b'\x1f\x8b':
-            # gzip / tar.gz
-            import tarfile
-            archive_path = zip_path.with_suffix(".tar.gz")
-            zip_path.rename(archive_path)
-            with tarfile.open(archive_path, "r:gz") as t:
-                t.extractall(counts_dir)
-            archive_path.unlink(missing_ok=True)
-        elif magic[:4] == b'PK\x03\x04':
-            # standard ZIP
-            with zipfile.ZipFile(zip_path, "r") as z:
-                z.extractall(counts_dir)
-            zip_path.unlink(missing_ok=True)
-        else:
-            file_size = zip_path.stat().st_size
+        try:
+            if magic[:2] == b'\x1f\x8b':
+                # gzip / tar.gz
+                import tarfile
+                archive_path = zip_path.with_suffix(".tar.gz")
+                zip_path.rename(archive_path)
+                with tarfile.open(archive_path, "r:gz") as t:
+                    t.extractall(counts_dir)
+                archive_path.unlink(missing_ok=True)
+            elif magic[:4] == b'PK\x03\x04':
+                # standard ZIP
+                with zipfile.ZipFile(zip_path, "r") as z:
+                    z.extractall(counts_dir)
+                zip_path.unlink(missing_ok=True)
+            else:
+                file_size = zip_path.stat().st_size
+                raise GDCError(
+                    f"Downloaded file is not a ZIP or tar.gz "
+                    f"(size: {file_size/1024:.1f} KB, magic: {magic.hex()}).",
+                    fix=(
+                        "The GDC may have returned an error page instead of data.\n"
+                        "Delete the partial file and retry:\n"
+                        f"    rm {zip_path}\n"
+                        "    tcga-download --project TCGA-CHOL --output ~/TCGA_test\n"
+                        "(Completed steps are checkpointed and will not re-run.)"
+                    ),
+                    step="extraction",
+                )
+        except (EOFError, tarfile.ReadError, zipfile.BadZipFile) as e:
+            # Archive is truncated — download was incomplete
+            for p in [zip_path, zip_path.with_suffix(".tar.gz")]:
+                if p.exists():
+                    p.unlink()
             raise GDCError(
-                f"Downloaded file is not a ZIP or tar.gz "
-                f"(size: {file_size/1024:.1f} KB, magic: {magic.hex()}).",
+                f"Downloaded archive is corrupted or incomplete: {e}",
                 fix=(
-                    "The GDC may have returned an error page instead of data.\n"
-                    "Delete the partial file and retry:\n"
-                    f"    rm {zip_path}\n"
-                    "    tcga-download --project TCGA-CHOL --output ~/TCGA_test\n"
-                    "(Completed steps are checkpointed and will not re-run.)"
+                    "The download was likely interrupted by the GDC server.\n"
+                    "The partial file has been deleted. Re-run the same command\n"
+                    "and the download will restart automatically.\n"
+                    "(All other completed steps are checkpointed and will not re-run.)"
                 ),
                 step="extraction",
             )

@@ -327,17 +327,30 @@ elif current_step == 5:
             # Detect actual archive format by magic bytes
             with open(zip_path, "rb") as fh:
                 magic = fh.read(4)
-            if magic[:2] == b'\x1f\x8b':
-                import tarfile
-                archive_path = zip_path.with_suffix(".tar.gz")
-                zip_path.rename(archive_path)
-                with tarfile.open(archive_path, "r:gz") as t:
-                    t.extractall(counts_dir)
-                archive_path.unlink(missing_ok=True)
-            else:
-                with zipfile.ZipFile(zip_path, "r") as z:
-                    z.extractall(counts_dir)
-                zip_path.unlink(missing_ok=True)
+            try:
+                if magic[:2] == b'\x1f\x8b':
+                    import tarfile
+                    archive_path = zip_path.with_suffix(".tar.gz")
+                    zip_path.rename(archive_path)
+                    with tarfile.open(archive_path, "r:gz") as t:
+                        t.extractall(counts_dir)
+                    archive_path.unlink(missing_ok=True)
+                else:
+                    with zipfile.ZipFile(zip_path, "r") as z:
+                        z.extractall(counts_dir)
+                    zip_path.unlink(missing_ok=True)
+            except (EOFError, Exception) as extract_err:
+                # Archive is truncated — clean up and prompt retry
+                for p in [zip_path, zip_path.with_suffix(".tar.gz")]:
+                    if p.exists():
+                        p.unlink()
+                st.error(
+                    f"⚠️ The downloaded archive was incomplete or corrupted "
+                    f"(the GDC server likely dropped the connection).\n\n"
+                    f"The partial file has been deleted. Click **Re-run step** "
+                    f"to try the download again."
+                )
+                st.stop()
             cp.save("downloaded", {"counts_dir": str(counts_dir)})
             st.session_state["step"] = 6
             st.rerun()

@@ -335,16 +335,52 @@ class GDCClient:
         except ImportError:
             pbar = _DummyProgress()
 
-        try:
-            with open(dest, "wb") as f, pbar:
-                for chunk in resp.iter_content(chunk_size=CHUNK_SIZE_BYTES):
-                    if chunk:
-                        f.write(chunk)
-                        written += len(chunk)
-                        if hasattr(pbar, "update"):
-                            pbar.update(len(chunk))
-        except (OSError, IOError) as e:
-            raise exc_mod.DiskSpaceError(str(dest), str(e))
+        max_attempts = MAX_RETRIES + 1
+        last_error = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Re-request on retry attempts
+                if attempt > 1:
+                    import time
+                    time.sleep(5 * attempt)
+                    resp = self._post(
+                        GDC_DATA_ENDPOINT,
+                        {"ids": file_ids},
+                        context="bulk download",
+                        stream=True,
+                        timeout=REQUEST_TIMEOUT_LONG,
+                    )
+                    written = 0
+                    if hasattr(pbar, "reset"):
+                        pbar.reset()
+
+                with open(dest, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=CHUNK_SIZE_BYTES):
+                        if chunk:
+                            f.write(chunk)
+                            written += len(chunk)
+                            if hasattr(pbar, "update"):
+                                pbar.update(len(chunk))
+                break  # success — exit retry loop
+
+            except (OSError, IOError) as e:
+                raise exc_mod.DiskSpaceError(str(dest), str(e))
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts:
+                    print(f"\n  ⚠️  Download interrupted (attempt {attempt}/{max_attempts}), retrying...")
+                    if dest.exists():
+                        dest.unlink()
+                else:
+                    raise GDCError(
+                        f"Download failed after {max_attempts} attempts: {e}",
+                        fix="Check your internet connection and try again.",
+                        step="download",
+                    )
+        finally:
+            if hasattr(pbar, "close"):
+                pbar.close()
 
         return written
 
