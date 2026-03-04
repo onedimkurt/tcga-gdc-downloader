@@ -380,7 +380,6 @@ class GDCClient:
                     )
         if hasattr(pbar, "close"):
             pbar.close()
-
         return written
 
 

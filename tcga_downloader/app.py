@@ -314,48 +314,59 @@ elif current_step == 5:
         st.session_state["step"] = 6
         st.rerun()
 
+    import tarfile
+    from tcga_downloader.constants import GDC_DOWNLOAD_BATCH_SIZE
     counts_dir = output_dir / "raw_counts"
     counts_dir.mkdir(exist_ok=True)
-    zip_path = output_dir / "gdc_download.zip"
-    file_ids = [f["file_id"] for f in hits]
+    file_ids  = [f["file_id"] for f in hits]
+    n_batches = (len(file_ids) + GDC_DOWNLOAD_BATCH_SIZE - 1) // GDC_DOWNLOAD_BATCH_SIZE
 
-    with st.spinner(f"Downloading {len(file_ids)} files (~"
-                    f"{sum(f.get('file_size',0) for f in hits)/(1024**3):.1f} GB)..."):
-        try:
-            n_bytes = st.session_state["client"].stream_download(file_ids, str(zip_path))
-            st.info(f"Downloaded {n_bytes/(1024**2):.0f} MB. Extracting...")
-            # Detect actual archive format by magic bytes
-            with open(zip_path, "rb") as fh:
+    try:
+        progress_bar = st.progress(0, text=f"Downloading batch 1 of {n_batches}...")
+        for batch_num, batch_start in enumerate(
+                range(0, len(file_ids), GDC_DOWNLOAD_BATCH_SIZE), start=1):
+            batch_ids  = file_ids[batch_start:batch_start + GDC_DOWNLOAD_BATCH_SIZE]
+            batch_path = output_dir / f"gdc_batch_{batch_num:03d}.zip"
+
+            progress_bar.progress(
+                int((batch_num - 1) / n_batches * 100),
+                text=f"Downloading batch {batch_num}/{n_batches} ({len(batch_ids)} files)..."
+            )
+
+            if not batch_path.exists():
+                st.session_state["client"].stream_download(batch_ids, str(batch_path))
+
+            # Extract batch
+            with open(batch_path, "rb") as fh:
                 magic = fh.read(4)
             try:
                 if magic[:2] == b'\x1f\x8b':
-                    import tarfile
-                    archive_path = zip_path.with_suffix(".tar.gz")
-                    zip_path.rename(archive_path)
+                    archive_path = batch_path.with_suffix(".tar.gz")
+                    batch_path.rename(archive_path)
                     with tarfile.open(archive_path, "r:gz") as t:
                         t.extractall(counts_dir)
                     archive_path.unlink(missing_ok=True)
                 else:
-                    with zipfile.ZipFile(zip_path, "r") as z:
+                    with zipfile.ZipFile(batch_path, "r") as z:
                         z.extractall(counts_dir)
-                    zip_path.unlink(missing_ok=True)
-            except (EOFError, Exception) as extract_err:
-                # Archive is truncated — clean up and prompt retry
-                for p in [zip_path, zip_path.with_suffix(".tar.gz")]:
+                    batch_path.unlink(missing_ok=True)
+            except (EOFError, tarfile.ReadError, zipfile.BadZipFile) as extract_err:
+                for p in [batch_path, batch_path.with_suffix(".tar.gz")]:
                     if p.exists():
                         p.unlink()
                 st.error(
-                    f"⚠️ The downloaded archive was incomplete or corrupted "
-                    f"(the GDC server likely dropped the connection).\n\n"
-                    f"The partial file has been deleted. Click **Re-run step** "
-                    f"to try the download again."
+                    f"⚠️ Batch {batch_num}/{n_batches} was incomplete or corrupted. "
+                    f"The partial file has been deleted. "
+                    f"Click **Re-run step** to resume from this batch."
                 )
                 st.stop()
-            cp.save("downloaded", {"counts_dir": str(counts_dir)})
-            st.session_state["step"] = 6
-            st.rerun()
-        except GDCError as e:
-            _show_error(e)
+
+        progress_bar.progress(100, text=f"✅ All {n_batches} batches downloaded and extracted.")
+        cp.save("downloaded", {"counts_dir": str(counts_dir)})
+        st.session_state["step"] = 6
+        st.rerun()
+    except GDCError as e:
+        _show_error(e)
 
 
 # =============================================================================
