@@ -555,7 +555,8 @@ elif current_step == 9:
     pid               = st.session_state["project_id"]
     matrix            = st.session_state["matrix"]
     metadata_df       = st.session_state["metadata_df"]
-    metadata_with_cdr = st.session_state.get("metadata_with_cdr") or metadata_df
+    _cdr = st.session_state.get("metadata_with_cdr")
+    metadata_with_cdr = _cdr if _cdr is not None else metadata_df
     clinical_df       = st.session_state["clinical_df"]
     output_dir        = st.session_state["output_dir"]
     cp                = st.session_state["checkpoint"]
