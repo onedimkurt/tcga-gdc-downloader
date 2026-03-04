@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tcga-gdc-downloader"
-version = "2.1.1"
+version = "2.1.2"
 description = "User-friendly tool to download TCGA STAR RNA-seq counts from the GDC portal"
 readme = "README.md"
 license = { file = "LICENSE" }

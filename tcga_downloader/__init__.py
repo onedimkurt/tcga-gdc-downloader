@@ -20,7 +20,7 @@ from tcga_downloader.merge  import merge_outputs, save_full_merged_with_cdr
 from tcga_downloader.sample import classify_sample, get_sample_type_label
 from tcga_downloader.cdr    import run_cdr_pipeline
 
-__version__ = "2.1.1"
+__version__ = "2.1.2"
 
 __all__ = [
     "GDCClient",

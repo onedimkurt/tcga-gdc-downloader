@@ -57,7 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Ignore any existing checkpoint and start from scratch")
     parser.add_argument("--no-cdr", action="store_true",
                         help="Skip the PanCanAtlas CDR annotation step")
-    parser.add_argument("--version", "-v", action="version", version="%(prog)s 2.1.1")
+    parser.add_argument("--version", "-v", action="version", version="%(prog)s 2.1.2")
     return parser
 
 
